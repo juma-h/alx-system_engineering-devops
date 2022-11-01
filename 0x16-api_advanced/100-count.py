@@ -1,61 +1,88 @@
 #!/usr/bin/python3
 """
-Querries the Reddit API and returns a list of the titles of all hot posts
-listed for a given subreddit
+Function that queries the Reddit API and prints
+the top ten hot posts of a subreddit
 """
-
-import json
 import requests
 
+def sort_histogram(histogram={}):
+    '''Sorts and prints the given histogram.
+    '''
+    histogram = list(filter(lambda kv: kv[1], histogram))
+    histogram_dict = {}
+    for item in histogram:
+        if item[0] in histogram_dict:
+            histogram_dict[item[0]] += item[1]
+        else:
+            histogram_dict[item[0]] = item[1]
+    histogram = list(histogram_dict.items())
+    histogram.sort(
+        key=lambda kv: kv[0],
+        reverse=False
+    )
+    histogram.sort(
+        key=lambda kv: kv[1],
+        reverse=True
+    )
+    res_str = '\n'.join(list(map(
+        lambda kv: '{}: {}'.format(kv[0], kv[1]),
+        histogram
+    )))
+    if res_str:
+        print(res_str)
 
-def count_words(subreddit, word_list, hot_list=[], after=None):
-    """Return a list of the titles of all hot posts listed for a subreddit"""
-    headers = {"user-agent": "holberton"}
-    params = {"after": after}
-    url = "https://www.reddit.com/r/{}/hot.json".format(subreddit)
-    subdata = requests.get(url, headers=headers, params=params)
-    if subdata.status_code != 200:
-        return None
-    data = json.loads(subdata.text).get('data').get('children')
-    after = json.loads(subdata.text).get('data').get('after')
-    if data is None:
-        if len(hot_list) == 0:
-            print("")
-            return
-        word_count = {}
-        word_list = list(set([word.lower() for word in word_list]))
-        for word in word_list:
-            word_count[word] = 0
-        for word in word_list:
-            for title in hot_list:
-                for t in title.split():
-                    if word == t.lower():
-                        word_count[word] = word_count[word] + 1
-        sort_word_count = sorted(word_count.items(), key=lambda x: x[1],
-                                 reverse=True)
-        for i in sort_word_count:
-            if i[1] > 0:
-                print("{}: {}".format(i[0], i[1]))
+
+def count_words(subreddit, word_list, histogram=[], n=0, after=None):
+    '''Counts the number of times each word in a given wordlist
+    occurs in a given subreddit.
+    '''
+    api_headers = {
+        'Accept': 'application/json',
+        'User-Agent': ' '.join([
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'AppleWebKit/537.36 (KHTML, like Gecko)',
+            'Chrome/97.0.4692.71',
+            'Safari/537.36',
+            'Edg/97.0.1072.62'
+        ])
+    }
+    sort = 'hot'
+    limit = 30
+    res = requests.get(
+        '{}/r/{}/.json?sort={}&limit={}&count={}&after={}'.format(
+            'https://www.reddit.com',
+            subreddit,
+            sort,
+            limit,
+            n,
+            after if after else ''
+        ),
+        headers=api_headers,
+        allow_redirects=False
+    )
+    if not histogram:
+        word_list = list(map(lambda word: word.lower(), word_list))
+        histogram = list(map(lambda word: (word, 0), word_list))
+    if res.status_code == 200:
+        data = res.json()['data']
+        posts = data['children']
+        titles = list(map(lambda post: post['data']['title'], posts))
+        histogram = list(map(
+            lambda kv: (kv[0], kv[1] + sum(list(map(
+                lambda txt: txt.lower().split().count(kv[0]),
+                titles
+            )))),
+            histogram
+        ))
+        if len(posts) >= limit and data['after']:
+            count_words(
+                subreddit,
+                word_list,
+                histogram,
+                n + len(posts),
+                data['after']
+            )
+        else:
+            sort_histogram(histogram)
     else:
-        for item in data:
-            hot_list.append(item.get('data').get('title'))
-    if after is None:
-        if len(hot_list) == 0:
-            print("")
-            return
-        word_count = {}
-        word_list = list(set([word.lower() for word in word_list]))
-        for word in word_list:
-            word_count[word] = 0
-        for word in word_list:
-            for title in hot_list:
-                for t in title.split():
-                    if word.lower() == t.lower():
-                        word_count[word] = word_count[word] + 1
-        sort_word_count = sorted(word_count.items(), key=lambda x: x[1],
-                                 reverse=True)
-        for i in sort_word_count:
-            if i[1] > 0:
-                print("{}: {}".format(i[0], i[1]))
-    else:
-        return count_words(subreddit, word_list, hot_list, after)
+        return
